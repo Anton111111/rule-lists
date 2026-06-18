@@ -2,7 +2,7 @@ name: Fetch and Release Lists
 
 on:
   schedule:
-    - cron: '0 0 * * 0'   # Every Sunday at 00:00 UTC
+    - cron: '0 0 1 * *'   # On day 1 of the month at 00:00 UTC
   workflow_dispatch:       # Also allows manual trigger
 
 jobs:
