@@ -46,3 +46,45 @@ jobs:
           files: output/*.list
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prune old releases and tags, keep latest 5
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          KEEP_RELEASES: 5
+        run: |
+          set -euo pipefail
+
+          page=1
+          ids=()
+          while true; do
+            response=$(curl -sSL -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/releases?per_page=100&page=${page}")
+            page_ids=( $(echo "$response" | jq -r '.[].id') )
+            if [ ${#page_ids[@]} -eq 0 ]; then
+              break
+            fi
+            ids+=("${page_ids[@]}")
+            if [ ${#page_ids[@]} -lt 100 ]; then
+              break
+            fi
+            page=$((page + 1))
+          done
+
+          total=${#ids[@]}
+          if [ "$total" -le "$KEEP_RELEASES" ]; then
+            echo "No old releases to delete (found $total releases)."
+            exit 0
+          fi
+
+          echo "Found $total releases. Deleting older releases beyond the latest $KEEP_RELEASES."
+          for id in "${ids[@]:$KEEP_RELEASES}"; do
+            release=$(curl -sSL -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/releases/${id}")
+            tag_name=$(echo "$release" | jq -r '.tag_name // empty')
+            echo "Deleting release ID $id (tag: $tag_name)"
+            curl -sSL -X DELETE -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/releases/${id}"
+            if [ -n "$tag_name" ]; then
+              echo "Deleting tag '$tag_name'"
+              curl -sSL -X DELETE -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/git/refs/tags/${tag_name}" || true
+            fi
+          done
